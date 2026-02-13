@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { Eye, EyeOff, LogIn } from 'lucide-react'
+import { useNavigate, Link, useParams } from 'react-router-dom'
+import { Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react'
 import AuthLayout from '../../components/common/AuthLayout'
 
-const SuperAdminLogin = () => {
+const DriverLogin = () => {
   const navigate = useNavigate()
+  const { fleetCode } = useParams()
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
@@ -12,13 +13,6 @@ const SuperAdminLogin = () => {
     password: ''
   })
   const [errors, setErrors] = useState({})
-
-  // 預設的超級管理員帳號（之後會改成從後端驗證）
-  const VALID_ACCOUNTS = [
-    { phone: '0975521219', password: 'sgm0975521219' },
-    { phone: '0982098079', password: 'sgm0982098079' },
-    { phone: '0911123456', password: 'sgm0911123456' }
-  ]
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -40,7 +34,7 @@ const SuperAdminLogin = () => {
     if (!formData.phone) {
       newErrors.phone = '請輸入手機號碼'
     } else if (!/^09\d{8}$/.test(formData.phone)) {
-      newErrors.phone = '手機號碼格式不正確（應為09開頭10碼）'
+      newErrors.phone = '手機號碼格式不正確'
     }
     
     if (!formData.password) {
@@ -61,36 +55,31 @@ const SuperAdminLogin = () => {
 
     setLoading(true)
     
+    // 模擬登入驗證
     setTimeout(() => {
-      const validAccount = VALID_ACCOUNTS.find(
-        acc => acc.phone === formData.phone && acc.password === formData.password
-      )
-
-      if (validAccount) {
-        localStorage.setItem('token', 'fake-jwt-token')
-        localStorage.setItem('user', JSON.stringify({
-          role: 'super-admin',
-          phone: formData.phone,
-          name: '超級管理員'
-        }))
-        navigate('/super-admin')
-      } else {
-        setErrors({
-          form: '手機號碼或密碼錯誤'
-        })
-      }
+      // 這裡之後會串接後端
+      localStorage.setItem('token', 'driver-token')
+      localStorage.setItem('user', JSON.stringify({
+        role: 'driver',
+        phone: formData.phone,
+        name: '司機',
+        fleetCode: fleetCode || 'F001'
+      }))
+      
+      // 跳轉到司機任務大廳
+      navigate(`/fleet/${fleetCode || 'F001'}/driver`)
       setLoading(false)
     }, 1000)
   }
 
   return (
     <AuthLayout 
-      title="超級管理員登入"
-      subtitle="請使用預設帳號密碼登入"
-      role="超級管理員"
+      title="司機登入"
+      subtitle="請使用註冊的手機號碼登入"
+      role="司機"
     >
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* 手機號碼輸入 */}
+        {/* 手機號碼 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             手機號碼
@@ -114,7 +103,7 @@ const SuperAdminLogin = () => {
           )}
         </div>
 
-        {/* 密碼輸入 */}
+        {/* 密碼 */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             密碼
@@ -147,6 +136,16 @@ const SuperAdminLogin = () => {
           )}
         </div>
 
+        {/* 忘記密碼 */}
+        <div className="text-right">
+          <Link 
+            to={`/fleet/${fleetCode || 'F001'}/driver/forgot-password`} 
+            className="text-sm text-blue-600 hover:text-blue-700"
+          >
+            忘記密碼？
+          </Link>
+        </div>
+
         {/* 表單錯誤 */}
         {errors.form && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
@@ -154,17 +153,24 @@ const SuperAdminLogin = () => {
           </div>
         )}
 
+        {/* 審核中提示 */}
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+          <div className="flex items-start space-x-2">
+            <AlertCircle size={16} className="text-yellow-600 mt-0.5" />
+            <p className="text-xs text-yellow-700">
+              若您剛註冊，請等待車隊管理員審核通過後方可登入。
+            </p>
+          </div>
+        </div>
+
         {/* 登入按鈕 */}
         <button
           type="submit"
           disabled={loading}
           className={`
-            w-full bg-blue-600 text-white py-3 rounded-lg font-medium
+            w-full bg-yellow-600 text-white py-3 rounded-lg font-medium
             flex items-center justify-center space-x-2
-            ${loading 
-              ? 'opacity-70 cursor-not-allowed' 
-              : 'hover:bg-blue-700 transition-colors'
-            }
+            ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-yellow-700'}
           `}
         >
           {loading ? (
@@ -180,15 +186,23 @@ const SuperAdminLogin = () => {
           )}
         </button>
 
-        {/* 返回首頁 */}
+        {/* 註冊連結 */}
         <div className="text-center">
-          <Link to="/" className="text-sm text-gray-600 hover:text-blue-600">
-            ← 返回首頁
+          <span className="text-sm text-gray-600">還沒有帳號？</span>
+          <Link to={`/fleet/${fleetCode || 'F001'}/driver/register`} className="text-sm text-yellow-600 hover:text-yellow-700 ml-1">
+            立即註冊
           </Link>
         </div>
+
+        {/* 車隊編號資訊 */}
+        {fleetCode && (
+          <div className="text-center text-xs text-gray-400">
+            車隊編號：{fleetCode}
+          </div>
+        )}
       </form>
     </AuthLayout>
   )
 }
 
-export default SuperAdminLogin
+export default DriverLogin
