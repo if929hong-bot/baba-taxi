@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>叭叭出行 - WebSocket 測試</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h2 {
+            color: #333;
+            border-bottom: 2px solid #6b46c1;
+            padding-bottom: 10px;
+        }
+        .role-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .role-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            background: #e0e0e0;
+        }
+        .role-btn.active {
+            background: #6b46c1;
+            color: white;
+        }
+        .status {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .event-log {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 10px;
+            border-radius: 5px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            margin-bottom: 20px;
+        }
+        .event {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #333;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 8px 16px;
+            background: #6b46c1;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #553c9a;
+        }
+        input, textarea {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            flex: 1;
+        }
+        .form-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🔌 叭叭出行 WebSocket 測試</h2>
+        
+        <div class="role-selector">
+            <button class="role-btn" onclick="setRole('driver')">🚗 司機</button>
+            <button class="role-btn" onclick="setRole('passenger')">👤 乘客</button>
+            <button class="role-btn" onclick="setRole('fleet')">🏢 車隊管理員</button>
+            <button class="role-btn" onclick="setRole('super')">👑 超級管理員</button>
+        </div>
+
+        <div class="status" id="status">
+            未連線
+        </div>
+
+        <div class="event-log" id="eventLog">
+            <div class="event">📋 事件記錄將顯示在這裡...</div>
+        </div>
+
+        <div id="driverControls" style="display: none;">
+            <h3>司機控制</h3>
+            <div class="form-group">
+                <input type="text" id="latitude" placeholder="緯度" value="25.0330">
+                <input type="text" id="longitude" placeholder="經度" value="121.5654">
+                <button onclick="updateLocation()">更新位置</button>
+            </div>
+            <div class="form-group">
+                <button onclick="goOnline()">🟢 上線</button>
+                <button onclick="goOffline()">🔴 下線</button>
+            </div>
+            <div class="form-group">
+                <input type="text" id="orderId" placeholder="訂單ID">
+                <button onclick="acceptOrder()">✅ 接受訂單</button>
+            </div>
+        </div>
+
+        <div id="passengerControls" style="display: none;">
+            <h3>乘客控制</h3>
+            <div class="form-group">
+                <input type="text" id="passengerOrderId" placeholder="訂單ID">
+                <button onclick="trackOrder()">📍 追蹤訂單</button>
+            </div>
+        </div>
+
+        <div id="fleetControls" style="display: none;">
+            <h3>車隊管理員控制</h3>
+            <div class="form-group">
+                <button onclick="requestFleetStats()">📊 取得車隊統計</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null
+        let currentRole = null
+        let token = null
+
+        // 模擬登入取得 token（實際應用中需要先登入）
+        function getToken(role) {
+            // 這裡應該從登入 API 取得真實 token
+            return 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InRlc3QtaWQiLCJyb2xlIjoiZ3Vlc3QifQ.test-signature'
+        }
+
+        function setRole(role) {
+            currentRole = role
+            document.querySelectorAll('.role-btn').forEach(btn => btn.classList.remove('active'))
+            event.target.classList.add('active')
+            
+            // 隱藏所有控制項
+            document.getElementById('driverControls').style.display = 'none'
+            document.getElementById('passengerControls').style.display = 'none'
+            document.getElementById('fleetControls').style.display = 'none'
+            
+            // 顯示對應控制項
+            if (role === 'driver') {
+                document.getElementById('driverControls').style.display = 'block'
+            } else if (role === 'passenger') {
+                document.getElementById('passengerControls').style.display = 'block'
+            } else if (role === 'fleet') {
+                document.getElementById('fleetControls').style.display = 'block'
+            }
+
+            connectWebSocket(role)
+        }
+
+        function connectWebSocket(role) {
+            if (socket) {
+                socket.disconnect()
+            }
+
+            token = getToken(role)
+            
+            socket = io('http://localhost:3000', {
+                auth: { token },
+                query: { role }
+            })
+
+            socket.on('connect', () => {
+                addEvent('✅ 已連線到 WebSocket 伺服器', 'success')
+                document.getElementById('status').innerHTML = '🟢 已連線'
+            })
+
+            socket.on('disconnect', () => {
+                addEvent('❌ 已斷線', 'error')
+                document.getElementById('status').innerHTML = '🔴 未連線'
+            })
+
+            socket.on('error', (error) => {
+                addEvent(`⚠️ 錯誤：${error}`, 'error')
+            })
+
+            // 司機端事件
+            socket.on('order:new', (data) => {
+                addEvent(`🚗 新訂單：${data.orderNumber} - ${data.pickupAddress}`, 'info')
+            })
+
+            socket.on('order:accepted', (data) => {
+                addEvent(`✅ 訂單已被接受：${data.orderId}`, 'success')
+            })
+
+            // 乘客端事件
+            socket.on('driver:location-update', (data) => {
+                addEvent(`📍 司機位置更新：${data.latitude}, ${data.longitude}`, 'info')
+            })
+
+            socket.on('order:status-update', (data) => {
+                addEvent(`🔄 訂單狀態更新：${data.orderId} -> ${data.status}`, 'info')
+            })
+
+            // 車隊管理員事件
+            socket.on('fleet:stats', (data) => {
+                addEvent(`📊 車隊統計 - 線上司機：${data.onlineDrivers}，進行中訂單：${data.activeOrders}`, 'info')
+            })
+
+            // 超級管理員事件
+            socket.on('platform:stats', (data) => {
+                addEvent(`📈 平台統計 - 車隊：${data.totalFleets}，司機：${data.totalDrivers}，訂單：${data.totalOrders}`, 'info')
+            })
+        }
+
+        // 司機功能
+        function goOnline() {
+            socket.emit('driver:online')
+            addEvent('🟢 司機上線', 'success')
+        }
+
+        function goOffline() {
+            addEvent('🔴 司機下線', 'warning')
+        }
+
+        function updateLocation() {
+            const lat = document.getElementById('latitude').value
+            const lng = document.getElementById('longitude').value
+            socket.emit('driver:location', { latitude: parseFloat(lat), longitude: parseFloat(lng) })
+            addEvent(`📍 更新位置：${lat}, ${lng}`, 'info')
+        }
+
+        function acceptOrder() {
+            const orderId = document.getElementById('orderId').value
+            if (orderId) {
+                socket.emit('driver:accept-order', { orderId })
+                addEvent(`✅ 接受訂單：${orderId}`, 'success')
+            }
+        }
+
+        // 乘客功能
+        function trackOrder() {
+            const orderId = document.getElementById('passengerOrderId').value
+            if (orderId) {
+                // 重新連線並帶入訂單ID
+                if (socket) {
+                    socket.disconnect()
+                }
+                socket = io('http://localhost:3000', {
+                    auth: { token },
+                    query: { role: 'passenger', orderId }
+                })
+                addEvent(`📍 開始追蹤訂單：${orderId}`, 'info')
+            }
+        }
+
+        // 車隊管理員功能
+        function requestFleetStats() {
+            // 車隊統計會自動每5秒推送
+            addEvent('📊 請求車隊統計...', 'info')
+        }
+
+        function addEvent(message, type = 'info') {
+            const log = document.getElementById('eventLog')
+            const event = document.createElement('div')
+            event.className = 'event'
+            
+            const time = new Date().toLocaleTimeString()
+            
+            let color = '#00ff00'
+            if (type === 'error') color = '#ff0000'
+            if (type === 'success') color = '#00ff00'
+            if (type === 'warning') color = '#ffff00'
+            
+            event.innerHTML = `<span style="color: #888;">[${time}]</span> <span style="color: ${color};">${message}</span>`
+            log.appendChild(event)
+            log.scrollTop = log.scrollHeight
+        }
+
+        // 預設選擇司機角色
+        setTimeout(() => {
+            document.querySelector('.role-btn').click()
+        }, 100)
+    </script>
+</body>
+</html>

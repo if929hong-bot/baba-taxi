@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket 簡單測試</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <h2>WebSocket 連線測試</h2>
+    <div id="status">測試中...</div>
+    <div id="log"></div>
+
+    <script>
+        const log = document.getElementById('log')
+        const statusDiv = document.getElementById('status')
+        
+        function addLog(msg) {
+            log.innerHTML += '<div>' + new Date().toLocaleTimeString() + ' - ' + msg + '</div>'
+        }
+
+        addLog('開始連線到 ws://localhost:3000...')
+        
+        // 先嘗試用 WebSocket 取得 token
+        async function getToken() {
+            try {
+                const response = await fetch('http://localhost:3000/api/super/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phone: '0975521219',
+                        password: 'sgm0975521219'
+                    })
+                })
+                const data = await response.json()
+                if (data.success) {
+                    addLog('✅ 取得 token 成功')
+                    return data.data.token
+                } else {
+                    addLog('⚠️ 取得 token 失敗，使用測試 token')
+                    return 'test-token'
+                }
+            } catch (error) {
+                addLog('⚠️ 無法取得 token，使用測試 token')
+                return 'test-token'
+            }
+        }
+
+        // 建立 WebSocket 連線
+        getToken().then(token => {
+            addLog('使用 token: ' + token.substring(0, 20) + '...')
+            
+            const socket = io('http://localhost:3000', {
+                transports: ['websocket', 'polling'], // 允許兩種傳輸方式
+                auth: { token: token },
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000
+            })
+
+            socket.on('connect', () => {
+                statusDiv.innerHTML = '✅ 已連線！'
+                statusDiv.style.color = 'green'
+                addLog('✅ WebSocket 連線成功！')
+                
+                // 測試發送訊息
+                socket.emit('test-message', { msg: 'Hello Server!' })
+            })
+
+            socket.on('connect_error', (err) => {
+                statusDiv.innerHTML = '❌ 連線失敗'
+                statusDiv.style.color = 'red'
+                addLog('❌ 連線錯誤：' + err.message)
+                
+                // 嘗試用不同的 token 重連
+                if (err.message.includes('認證')) {
+                    addLog('🔄 嘗試使用備用 token...')
+                    setTimeout(() => {
+                        socket.auth.token = 'test-token'
+                        socket.connect()
+                    }, 2000)
+                }
+            })
+
+            socket.on('disconnect', (reason) => {
+                statusDiv.innerHTML = '🔴 已斷線'
+                statusDiv.style.color = 'orange'
+                addLog('🔴 已斷線，原因：' + reason)
+            })
+
+            socket.on('test-response', (data) => {
+                addLog('📨 收到伺服器回應：' + JSON.stringify(data))
+            })
+
+            // 接收各種事件
+            socket.onAny((event, ...args) => {
+                addLog(`📡 事件 ${event}: ${JSON.stringify(args)}`)
+            })
+        })
+    </script>
+</body>
+</html>
